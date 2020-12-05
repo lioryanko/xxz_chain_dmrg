@@ -2,7 +2,9 @@ import numpy as np
 import scipy.sparse.linalg
 import matplotlib.pyplot as plt
 import matplotlib
-#import cProfile
+import cProfile
+
+pr = cProfile.Profile()
 
 sz = np.array([[1, 0], [0, -1]])
 sp = np.array([[0, 1], [0, 0]])
@@ -54,9 +56,9 @@ class XXZChain(object):
     def get_super_block_ground_state(self):
         super_block_H = self.build_super_block_hamiltonian()
         eigvals, eigvects = scipy.sparse.linalg.eigs(super_block_H, k=1)
-        return eigvals[0], eigvects[:, 0]
+        return eigvals[0].real, eigvects[:, 0]
 
-    def get_super_block_ground_state_magnetization(self):
+    def get_super_block_magnetization_expectation_value(self, state):
         block_dimension = len(self.block_H)
         d = len(sz)
 
@@ -65,12 +67,12 @@ class XXZChain(object):
         super_block_M += np.kron(np.kron(np.eye(block_dimension), sz), np.eye(d * block_dimension))
         super_block_M += np.kron(np.eye(block_dimension * d * block_dimension), sz)
 
-        _, gs = self.get_super_block_ground_state()
-        return (np.conjugate(gs.T) @ super_block_M @ gs) / (np.conjugate(gs.T) @ gs)
+        row_state = np.conjugate(state.T)
+        return (row_state @ super_block_M @ state) / (row_state @ state)
 
     def get_compression_matrices(self):
-        _, ground_state = self.get_super_block_ground_state()
-        rho = np.einsum('i,j->ij', ground_state, np.conjugate(ground_state))
+        _, gs = self.get_super_block_ground_state()
+        rho = np.einsum('i,j->ij', gs, np.conjugate(gs))
         rho_reduced_dimension = len(self.block_H) * len(sz)
         rho_reduced = rho.reshape(rho_reduced_dimension, rho_reduced_dimension, rho_reduced_dimension,
                                   rho_reduced_dimension).trace(axis1=2, axis2=3)
@@ -117,8 +119,7 @@ def plot_as_function_of_Jz_and_h(N, J, resolution):
 
     for i in range(len(Jz)):
         for j in range(len(Jz[i])):
-            #pr = cProfile.Profile()
-
+            #pr.enable()
             exact_chain = XXZChain(max_dimension=1000, h=h[i][j], Jz=Jz[i][j], J=J)
             approximated_chain = XXZChain(max_dimension=10, h=h[i][j], Jz=Jz[i][j], J=J)
 
@@ -126,15 +127,14 @@ def plot_as_function_of_Jz_and_h(N, J, resolution):
             exact_chain.expand(iterations)
             approximated_chain.expand(iterations)
 
-            exact_gs_energy[i][j], _ = exact_chain.get_super_block_ground_state()
-            pr.enable()
-            approximated_gs_energy[i][j], _ = approximated_chain.get_super_block_ground_state()
-            exact_gs_magnetization[i][j] = exact_chain.get_super_block_ground_state_magnetization()
-            approximated_gs_magnetization[i][j] = approximated_chain.get_super_block_ground_state_magnetization()
+            exact_gs_energy[i][j], exact_gs = exact_chain.get_super_block_ground_state()
+            approximated_gs_energy[i][j], approximated_gs = approximated_chain.get_super_block_ground_state()
+            exact_gs_magnetization[i][j] = exact_chain.get_super_block_magnetization_expectation_value(exact_gs)
+            approximated_gs_magnetization[i][j] = approximated_chain.get_super_block_magnetization_expectation_value(approximated_gs)
             print("Jz={}, h={}, exact gs energy: {}, approximated gs energy: {}, exact gs magnetization: {}, approximated gs magnetization: {}".format(Jz[i][j], h[i][j], exact_gs_energy[i][j], approximated_gs_energy[i][j], exact_gs_magnetization[i][j], approximated_gs_magnetization[i][j]))
-
             #pr.disable()
             #pr.print_stats()
+
 
 
     general_title_info = "J={}, N={}, even_site_perturbation={}".format(J, N, even_site_perturbation)
