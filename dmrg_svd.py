@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.linalg
 import scipy.sparse.linalg
 import matplotlib.pyplot as plt
 import matplotlib
@@ -11,9 +12,47 @@ sp = np.array([[0, 1], [0, 0]])
 sm = sp.T
 
 
-class XXZChain(object):
-    def __init__(self, max_dimension, h, Jz, J):
+class MatrixCompressor(object):
+    def __init__(self, max_dimension):
         self.max_dimension = max_dimension
+        self.U = None
+        self.V = None
+
+    def _update_compression_matrices(self, U, V):
+        # Compress only if the max dimension has been exceeded.
+        if self.max_dimension < len(U):
+            self.U = U[:self.max_dimension]
+            self.V = V[:, :self.max_dimension]
+
+    def update(self, rho_reduced):
+        pass
+
+    def compress_operator(self, operator):
+        # If the compression matrices have not been updated yet, do nothing (this is for optimization purposes).
+        if not self.U:
+            return operator
+
+        return self.U @ operator @ self.V
+
+    def get_max_dimension(self):
+        return self.max_dimension
+
+
+class SVDCompressor(MatrixCompressor):
+    def update(self, rho_reduced):
+        U, _, V = np.linalg.svd(rho_reduced)
+        self._update_compression_matrices(U, V)
+
+
+class EigenCompressor(MatrixCompressor):
+    def update(self, rho_reduced):
+        U = scipy.linalg.eig(rho_reduced)[1]
+        self._update_compression_matrices(np.conjugate(U.T), U)
+
+
+class XXZChain(object):
+    def __init__(self, compressor, h, Jz, J):
+        self.compressor = compressor
         self.h = h
         self.Jz = Jz
         self.J = J
@@ -70,17 +109,13 @@ class XXZChain(object):
         row_state = np.conjugate(state.T)
         return (row_state @ super_block_M @ state) / (row_state @ state)
 
-    def get_compression_matrices(self):
-        _, gs = self.get_super_block_ground_state()
+    def update_compressor(self):
+        gs = self.get_super_block_ground_state()[1]
         rho = np.einsum('i,j->ij', gs, np.conjugate(gs))
         rho_reduced_dimension = len(self.block_H) * len(sz)
         rho_reduced = rho.reshape(rho_reduced_dimension, rho_reduced_dimension, rho_reduced_dimension,
                                   rho_reduced_dimension).trace(axis1=2, axis2=3)
-        U, s, V = np.linalg.svd(rho_reduced)
-        d = min(self.max_dimension, len(s))
-        U_c = U[:d]
-        V_c = V[:, :d]
-        return U_c, V_c
+        self.compressor.update(rho_reduced)
 
     def expand(self, iterations):
         for i in range(iterations):
@@ -94,93 +129,81 @@ class XXZChain(object):
             block_H = np.kron(self.block_H, np.eye(len(sz))) - self.h * next_site_sz + block_site_interaction
             block_M = np.kron(self.block_M, np.eye(len(sz))) + next_site_sz
 
-            U, V = self.get_compression_matrices()
+            self.update_compressor()
 
             # Now the block has another site, and the operators operating on it are (possibly) compressed.
-            self.block_H = U @ block_H @ V
-            self.block_M = U @ block_M @ V
-            self.last_site_sz = U @ next_site_sz @ V
-            self.last_site_sp = U @ next_site_sp @ V
-            self.last_site_sm = U @ next_site_sm @ V
+            self.block_H = self.compressor.compress_operator(block_H)
+            self.block_M = self.compressor.compress_operator(block_M)
+            self.last_site_sz = self.compressor.compress_operator(next_site_sz)
+            self.last_site_sp = self.compressor.compress_operator(next_site_sp)
+            self.last_site_sm = self.compressor.compress_operator(next_site_sm)
 
 
-def plot_as_function_of_Jz_and_h(N, J, resolution):
+def plot_as_function_of_Jz_and_h(N, J, resolution, compressor):
     Jz = np.arange(-5, 5 + resolution, resolution, dtype='f')
     h = np.arange(-10, 10 + resolution, resolution, dtype='f')
 
     h, Jz = np.meshgrid(h, Jz)
-    exact_gs_energy = np.zeros_like(Jz)
-    approximated_gs_energy = np.zeros_like(exact_gs_energy)
-    exact_gs_magnetization = np.zeros_like(exact_gs_energy)
-    approximated_gs_magnetization = np.zeros_like(exact_gs_energy)
+    gs_energy = np.zeros_like(Jz)
+    gs_magnetization = np.zeros_like(gs_energy)
 
     for i in range(len(Jz)):
         for j in range(len(Jz[i])):
             #pr.enable()
-            exact_chain = XXZChain(max_dimension=1000, h=h[i][j], Jz=Jz[i][j], J=J)
-            approximated_chain = XXZChain(max_dimension=10, h=h[i][j], Jz=Jz[i][j], J=J)
+            chain = XXZChain(compressor, h=h[i][j], Jz=Jz[i][j], J=J)
 
             iterations = int(N / 2)
-            exact_chain.expand(iterations)
-            approximated_chain.expand(iterations)
+            chain.expand(iterations)
 
-            exact_gs_energy[i][j], exact_gs = exact_chain.get_super_block_ground_state()
-            approximated_gs_energy[i][j], approximated_gs = approximated_chain.get_super_block_ground_state()
-            exact_gs_magnetization[i][j] = exact_chain.get_super_block_magnetization_expectation_value(exact_gs)
-            approximated_gs_magnetization[i][j] = approximated_chain.get_super_block_magnetization_expectation_value(approximated_gs)
-            print("Jz={}, h={}, exact gs energy: {}, approximated gs energy: {}, exact gs magnetization: {}, approximated gs magnetization: {}".format(Jz[i][j], h[i][j], exact_gs_energy[i][j], approximated_gs_energy[i][j], exact_gs_magnetization[i][j], approximated_gs_magnetization[i][j]))
+            gs_energy[i][j], gs = chain.get_super_block_ground_state()
+            gs_magnetization[i][j] = chain.get_super_block_magnetization_expectation_value(gs)
+            print("Jz={}, h={}, gs energy: {}, gs magnetization: {}".format(Jz[i][j], h[i][j], gs_energy[i][j], gs_magnetization[i][j]))
             #pr.disable()
             #pr.print_stats()
 
+    general_title_info = "J={}, N={}, max_dimension={}, compressor={}".format(J, N, compressor.get_max_dimension(), compressor)
 
-
-    general_title_info = "J={}, N={}".format(J, N)
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot_surface(Jz, h, exact_gs_energy, cmap=matplotlib.cm.coolwarm, linewidth=0, antialiased=False)
+    fig1 = plt.figure()
+    ax = fig1.add_subplot(111, projection='3d')
+    ax.plot_surface(Jz, h, gs_energy, cmap=matplotlib.cm.coolwarm, linewidth=0, antialiased=False)
     ax.set_xlabel('J_z [a.u.]')
     ax.set_ylabel('h [a.u.]')
     ax.set_zlabel('E_gs [a.u.]')
-    ax.set_title('Exact ground state energy as function of J_z and h, {}'.format(general_title_info))
+    ax.set_title('Ground state energy as function of J_z and h, {}'.format(general_title_info))
     ax.view_init(30, 45)
 
     fig2 = plt.figure()
     ax = fig2.add_subplot(111, projection='3d')
-    ax.plot_surface(Jz, h, approximated_gs_energy, cmap=matplotlib.cm.coolwarm, linewidth=0, antialiased=False)
-    ax.set_xlabel('J_z [a.u.]')
-    ax.set_ylabel('h [a.u.]')
-    ax.set_zlabel('E_gs [a.u.]')
-    ax.set_title('Approximated ground state energy as function of J_z and h, {}'.format(general_title_info))
-    ax.view_init(30, 45)
-
-    fig3 = plt.figure()
-    ax = fig3.add_subplot(111, projection='3d')
-    ax.plot_surface(Jz, h, exact_gs_magnetization, cmap=matplotlib.cm.coolwarm, linewidth=0, antialiased=False)
+    ax.plot_surface(Jz, h, gs_magnetization, cmap=matplotlib.cm.coolwarm, linewidth=0, antialiased=False)
     ax.set_xlabel('J_z [a.u.]')
     ax.set_ylabel('h [a.u.]')
     ax.set_zlabel('<M>_gs [a.u.]')
-    ax.set_title('Exact ground state magnetization as function of J_z and h, {}'.format(general_title_info))
+    ax.set_title('Ground state magnetization as function of J_z and h, {}'.format(general_title_info))
     ax.view_init(30, 45)
-
-    fig4 = plt.figure()
-    ax = fig4.add_subplot(111, projection='3d')
-    ax.plot_surface(Jz, h, approximated_gs_magnetization, cmap=matplotlib.cm.coolwarm, linewidth=0, antialiased=False)
-    ax.set_xlabel('J_z [a.u.]')
-    ax.set_ylabel('h [a.u.]')
-    ax.set_zlabel('<M>_gs [a.u.]')
-    ax.set_title('Approximated ground state magnetization as function of J_z and h, {}'.format(general_title_info))
-    ax.view_init(30, 45)
-
-    plt.show()
 
 
 def main():
     N = 8  # Chain length
     J = 2
     resolution = 0.5
+    high_compressor_max_dimension = 10
+    low_compressor_max_dimension = 1000
 
-    plot_as_function_of_Jz_and_h(N, J, resolution)
+    low_eigen_compressor = EigenCompressor(low_compressor_max_dimension)
+    plot_as_function_of_Jz_and_h(N, J, resolution, low_eigen_compressor)
+
+    high_eigen_compressor = EigenCompressor(high_compressor_max_dimension)
+    plot_as_function_of_Jz_and_h(N, J, resolution, high_eigen_compressor)
+
+    """
+    low_svd_compressor = SVDCompressor(low_compressor_max_dimension)
+    plot_as_function_of_Jz_and_h(N, J, resolution, low_svd_compressor)
+
+    high_svd_compressor = SVDCompressor(high_compressor_max_dimension)
+    plot_as_function_of_Jz_and_h(N, J, resolution, high_svd_compressor)
+    """
+
+    plt.show()
 
 
 if __name__ == '__main__':
