@@ -1,6 +1,8 @@
 import numpy as np
+import scipy.sparse.linalg
 import matplotlib.pyplot as plt
 import matplotlib
+#import cProfile
 
 sz = np.array([[1, 0], [0, -1]])
 sp = np.array([[0, 1], [0, 0]])
@@ -51,7 +53,7 @@ class XXZChain(object):
 
     def get_super_block_ground_state(self):
         super_block_H = self.build_super_block_hamiltonian()
-        eigvals, eigvects = np.linalg.eigh(super_block_H)
+        eigvals, eigvects = scipy.sparse.linalg.eigs(super_block_H, k=1)
         return eigvals[0], eigvects[:, 0]
 
     def get_super_block_ground_state_magnetization(self):
@@ -115,6 +117,8 @@ def plot_as_function_of_Jz_and_h(N, J, resolution):
 
     for i in range(len(Jz)):
         for j in range(len(Jz[i])):
+            #pr = cProfile.Profile()
+
             exact_chain = XXZChain(max_dimension=1000, h=h[i][j], Jz=Jz[i][j], J=J)
             approximated_chain = XXZChain(max_dimension=10, h=h[i][j], Jz=Jz[i][j], J=J)
 
@@ -123,10 +127,14 @@ def plot_as_function_of_Jz_and_h(N, J, resolution):
             approximated_chain.expand(iterations)
 
             exact_gs_energy[i][j], _ = exact_chain.get_super_block_ground_state()
+            pr.enable()
             approximated_gs_energy[i][j], _ = approximated_chain.get_super_block_ground_state()
             exact_gs_magnetization[i][j] = exact_chain.get_super_block_ground_state_magnetization()
             approximated_gs_magnetization[i][j] = approximated_chain.get_super_block_ground_state_magnetization()
             print("Jz={}, h={}, exact gs energy: {}, approximated gs energy: {}, exact gs magnetization: {}, approximated gs magnetization: {}".format(Jz[i][j], h[i][j], exact_gs_energy[i][j], approximated_gs_energy[i][j], exact_gs_magnetization[i][j], approximated_gs_magnetization[i][j]))
+
+            #pr.disable()
+            #pr.print_stats()
 
 
     general_title_info = "J={}, N={}, even_site_perturbation={}".format(J, N, even_site_perturbation)
