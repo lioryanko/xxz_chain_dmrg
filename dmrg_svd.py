@@ -34,9 +34,8 @@ class MatrixCompressor(object):
 
         return self.U @ operator @ self.V
 
-    def get_max_dimension(self):
-        return self.max_dimension
-
+    def __str__(self):
+        return '{} (max_dimension={})'.format(self.__class__.__name__, self.max_dimension)
 
 class SVDCompressor(MatrixCompressor):
     def update(self, rho_reduced):
@@ -163,7 +162,7 @@ def plot_as_function_of_Jz_and_h(N, J, resolution, compressor):
             #pr.disable()
             #pr.print_stats()
 
-    general_title_info = "J={}, N={}, max_dimension={}, compressor={}".format(J, N, compressor.get_max_dimension(), compressor)
+    general_title_info = "J={}, N={}, compressor={}".format(J, N, compressor)
 
     fig1 = plt.figure()
     ax = fig1.add_subplot(111, projection='3d')
@@ -197,13 +196,11 @@ def main():
     high_eigen_compressor = EigenCompressor(high_compressor_max_dimension)
     plot_as_function_of_Jz_and_h(N, J, resolution, high_eigen_compressor)
 
-    """
     low_svd_compressor = SVDCompressor(low_compressor_max_dimension)
     plot_as_function_of_Jz_and_h(N, J, resolution, low_svd_compressor)
 
     high_svd_compressor = SVDCompressor(high_compressor_max_dimension)
     plot_as_function_of_Jz_and_h(N, J, resolution, high_svd_compressor)
-    """
 
     plt.show()
 
