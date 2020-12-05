@@ -55,14 +55,14 @@ class XXZChain(object):
 
     def get_super_block_ground_state(self):
         super_block_H = self.build_super_block_hamiltonian()
-        eigvals, eigvects = scipy.sparse.linalg.eigs(super_block_H, k=1)
+        eigvals, eigvects = scipy.sparse.linalg.eigsh(super_block_H, k=1, which='SA')
         return eigvals[0].real, eigvects[:, 0]
 
     def get_super_block_magnetization_expectation_value(self, state):
         block_dimension = len(self.block_H)
         d = len(sz)
 
-        super_block_M = np.kron(self.block_M, np.eye(d ** 2 * block_dimension))
+        super_block_M = np.kron(self.block_M, np.eye(d * block_dimension * d))
         super_block_M += np.kron(np.eye(block_dimension * d), np.kron(self.block_M, np.eye(d)))
         super_block_M += np.kron(np.kron(np.eye(block_dimension), sz), np.eye(d * block_dimension))
         super_block_M += np.kron(np.eye(block_dimension * d * block_dimension), sz)
@@ -91,17 +91,14 @@ class XXZChain(object):
 
             block_site_interaction = self.Jz * np.kron(self.last_site_sz, sz)
             block_site_interaction += self.J / 2 * (np.kron(self.last_site_sp, sp) + np.kron(self.last_site_sm, sm))
+            block_H = np.kron(self.block_H, np.eye(len(sz))) - self.h * next_site_sz + block_site_interaction
+            block_M = np.kron(self.block_M, np.eye(len(sz))) + next_site_sz
 
             U, V = self.get_compression_matrices()
 
-            self.block_H = np.kron(self.block_H, np.eye(len(sz)))
-            self.block_H += -self.h * next_site_sz + block_site_interaction
-            self.block_M = np.kron(self.block_M, np.eye(len(sz)))
-            self.block_M += next_site_sz
-
             # Now the block has another site, and the operators operating on it are (possibly) compressed.
-            self.block_H = U @ self.block_H @ V
-            self.block_M = U @ self.block_M @ V
+            self.block_H = U @ block_H @ V
+            self.block_M = U @ block_M @ V
             self.last_site_sz = U @ next_site_sz @ V
             self.last_site_sp = U @ next_site_sp @ V
             self.last_site_sm = U @ next_site_sm @ V
@@ -137,7 +134,7 @@ def plot_as_function_of_Jz_and_h(N, J, resolution):
 
 
 
-    general_title_info = "J={}, N={}, even_site_perturbation={}".format(J, N, even_site_perturbation)
+    general_title_info = "J={}, N={}".format(J, N)
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
