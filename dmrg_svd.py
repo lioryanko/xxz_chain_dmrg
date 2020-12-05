@@ -152,7 +152,9 @@ def plot_as_function_of_Jz_and_h(N, J, resolution, compressor):
             #pr.enable()
             chain = XXZChain(compressor, h=h[i][j], Jz=Jz[i][j], J=J)
 
-            iterations = int(N / 2)
+            # The required amount of iterations so that the final super block in the following calculations
+            # would be of length N.
+            iterations = int(N / 2) - 2
             chain.expand(iterations)
 
             gs_energy[i][j], gs = chain.get_super_block_ground_state()
