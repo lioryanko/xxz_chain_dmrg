@@ -29,13 +29,14 @@ class MatrixCompressor(object):
 
     def compress_operator(self, operator):
         # If the compression matrices have not been updated yet, do nothing (this is for optimization purposes).
-        if not self.U:
+        if self.U is None:
             return operator
 
         return self.U @ operator @ self.V
 
     def __str__(self):
         return '{} (max_dimension={})'.format(self.__class__.__name__, self.max_dimension)
+
 
 class SVDCompressor(MatrixCompressor):
     def update(self, rho_reduced):
@@ -138,7 +139,7 @@ class XXZChain(object):
             self.last_site_sm = self.compressor.compress_operator(next_site_sm)
 
 
-def plot_as_function_of_Jz_and_h(N, J, resolution, compressor):
+def plot_as_function_of_Jz_and_h(N, J, resolution, compressor, max_dimension):
     Jz = np.arange(-5, 5 + resolution, resolution, dtype='f')
     h = np.arange(-10, 10 + resolution, resolution, dtype='f')
 
@@ -149,7 +150,7 @@ def plot_as_function_of_Jz_and_h(N, J, resolution, compressor):
     for i in range(len(Jz)):
         for j in range(len(Jz[i])):
             #pr.enable()
-            chain = XXZChain(compressor, h=h[i][j], Jz=Jz[i][j], J=J)
+            chain = XXZChain(compressor(max_dimension), h=h[i][j], Jz=Jz[i][j], J=J)
 
             # The required amount of iterations so that the final super block in the following calculations
             # would be of length N.
@@ -184,23 +185,16 @@ def plot_as_function_of_Jz_and_h(N, J, resolution, compressor):
 
 
 def main():
-    N = 8  # Chain length
+    N = 10  # Chain length
     J = 2
     resolution = 0.5
     high_compressor_max_dimension = 10
     low_compressor_max_dimension = 1000
 
-    low_eigen_compressor = EigenCompressor(low_compressor_max_dimension)
-    plot_as_function_of_Jz_and_h(N, J, resolution, low_eigen_compressor)
-
-    high_eigen_compressor = EigenCompressor(high_compressor_max_dimension)
-    plot_as_function_of_Jz_and_h(N, J, resolution, high_eigen_compressor)
-
-    low_svd_compressor = SVDCompressor(low_compressor_max_dimension)
-    plot_as_function_of_Jz_and_h(N, J, resolution, low_svd_compressor)
-
-    high_svd_compressor = SVDCompressor(high_compressor_max_dimension)
-    plot_as_function_of_Jz_and_h(N, J, resolution, high_svd_compressor)
+    plot_as_function_of_Jz_and_h(N, J, resolution, EigenCompressor, low_compressor_max_dimension)
+    plot_as_function_of_Jz_and_h(N, J, resolution, EigenCompressor, high_compressor_max_dimension)
+    plot_as_function_of_Jz_and_h(N, J, resolution, SVDCompressor, low_compressor_max_dimension)
+    plot_as_function_of_Jz_and_h(N, J, resolution, SVDCompressor, high_compressor_max_dimension)
 
     plt.show()
 
