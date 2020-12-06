@@ -13,14 +13,15 @@ sm = sp.T
 
 
 class MatrixCompressor(object):
-    def __init__(self, max_dimension):
+    def __init__(self, max_dimension, force_compression=False):
         self.max_dimension = max_dimension
+        self.force_compression = force_compression
         self.U = None
         self.V = None
 
     def _update_compression_matrices(self, U, V):
-        # Compress only if the max dimension has been exceeded.
-        if self.max_dimension < len(U):
+        # "Compress" only if the max dimension has been exceeded or compression is forced.
+        if self.max_dimension < len(U) or self.force_compression:
             self.U = U[:self.max_dimension]
             self.V = V[:, :self.max_dimension]
 
@@ -35,7 +36,7 @@ class MatrixCompressor(object):
         return self.U @ operator @ self.V
 
     def __str__(self):
-        return '{} (max_dimension={})'.format(self.__class__.__name__, self.max_dimension)
+        return '{} (max_dimension={}, compression_forced={})'.format(self.__class__.__name__, self.max_dimension, self.force_compression)
 
 
 class SVDCompressor(MatrixCompressor):
@@ -139,7 +140,7 @@ class XXZChain(object):
             self.last_site_sm = self.compressor.compress_operator(next_site_sm)
 
 
-def plot_as_function_of_Jz_and_h(N, J, resolution, compressor, max_dimension):
+def plot_as_function_of_Jz_and_h(N, J, resolution, compressor, max_dimension, force_compression=False):
     Jz = np.arange(-5, 5 + resolution, resolution, dtype='f')
     h = np.arange(-10, 10 + resolution, resolution, dtype='f')
 
@@ -150,7 +151,7 @@ def plot_as_function_of_Jz_and_h(N, J, resolution, compressor, max_dimension):
     for i in range(len(Jz)):
         for j in range(len(Jz[i])):
             #pr.enable()
-            chain = XXZChain(compressor(max_dimension), h=h[i][j], Jz=Jz[i][j], J=J)
+            chain = XXZChain(compressor(max_dimension, force_compression), h=h[i][j], Jz=Jz[i][j], J=J)
 
             # The required amount of iterations so that the final super block in the following calculations
             # would be of length N.
@@ -163,7 +164,7 @@ def plot_as_function_of_Jz_and_h(N, J, resolution, compressor, max_dimension):
             #pr.disable()
             #pr.print_stats()
 
-    general_title_info = "J={}, N={}, compressor={}".format(J, N, compressor)
+    general_title_info = "J={}, N={}, compressor={}, max_dimension={}, force_compression={}".format(J, N, compressor.__name__, max_dimension, force_compression)
 
     fig1 = plt.figure()
     ax = fig1.add_subplot(111, projection='3d')
@@ -193,7 +194,7 @@ def main():
 
     plot_as_function_of_Jz_and_h(N, J, resolution, EigenCompressor, low_compressor_max_dimension)
     plot_as_function_of_Jz_and_h(N, J, resolution, EigenCompressor, high_compressor_max_dimension)
-    plot_as_function_of_Jz_and_h(N, J, resolution, SVDCompressor, low_compressor_max_dimension)
+    plot_as_function_of_Jz_and_h(N, J, resolution, SVDCompressor, low_compressor_max_dimension, force_compression=True)
     plot_as_function_of_Jz_and_h(N, J, resolution, SVDCompressor, high_compressor_max_dimension)
 
     plt.show()
